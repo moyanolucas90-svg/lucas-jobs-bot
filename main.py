@@ -13,6 +13,7 @@ APIFY_TOKEN = os.environ["APIFY_TOKEN"]
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 SHEET_ID = "1Me87izYyYleO4v5by0Y5HsWG24PQOnhQj7xfffahWHI"
 ACTOR_ID = "worldunboxer~rapid-linkedin-scraper"
+NL = chr(10)
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -68,9 +69,9 @@ def append_to_sheet(jobs):
         existing_urls = set()
         for row in existing[1:]:
             for cell in row:
-                if cell.startswith('=HYPERLINK('):
+                if cell.startswith("=HYPERLINK("):
                     try:
-                        url = cell.split('"')[1]
+                        url = cell.split(chr(34))[1]
                         existing_urls.add(url)
                     except Exception:
                         pass
@@ -87,12 +88,9 @@ def append_to_sheet(jobs):
             easy = "Si" if job.get("easy_apply") else "No"
             applicants = job.get("num_applicants", "N/D")
             posted = job.get("time_posted", "")
-            link_formula = f'=HYPERLINK("{url}","{title}")' if url else title
-            rows_to_add.append([
-                link_formula, title, company, match,
-                salary, easy, applicants, posted,
-                today, "", ""
-            ])
+            q = chr(34)
+            link_formula = f"=HYPERLINK({q}{url}{q},{q}{title}{q})" if url else title
+            rows_to_add.append([link_formula, title, company, match, salary, easy, applicants, posted, today, "", ""])
         if rows_to_add:
             sheet.append_rows(rows_to_add, value_input_option="USER_ENTERED")
             print(f"[Sheet] {len(rows_to_add)} filas agregadas.")
@@ -153,7 +151,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, params in enumerate(SEARCHES, 1):
         try:
             await context.bot.edit_message_text(
-                f"Busqueda {i}/{len(SEARCHES)}: {params['job_title']} en {params['location']}...",
+                f"Busqueda {i}/{len(SEARCHES)}: {params[chr(39)]job_title{chr(39)}} en {params[chr(39)]location{chr(39)}}...",
                 chat_id=chat_id, message_id=status_msg.message_id, parse_mode="Markdown"
             )
             jobs = run_apify_search(params)
@@ -177,7 +175,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return 3
     all_jobs.sort(key=sort_key)
     sheet_ok = append_to_sheet(all_jobs)
-    await context.bot.send_message(chat_id, f"Resultados del {date.today().strftime('%d/%m/%Y')} - {len(all_jobs)} empleos encontrados", parse_mode="Markdown")
+    await context.bot.send_message(chat_id, f"Resultados del {date.today().strftime(chr(37)+chr(100)+chr(47)+chr(37)+chr(109)+chr(47)+chr(37)+chr(89))} - {len(all_jobs)} empleos encontrados", parse_mode="Markdown")
     for job in all_jobs[:20]:
         title = job.get("job_title", "Sin titulo")
         company = job.get("company_name", "")
@@ -187,10 +185,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         url = job.get("job_url", "")
         easy = "Easy Apply: Si" if job.get("easy_apply") else "Easy Apply: No"
         match = get_match(title)
-        text = (f"{match} [{title}]({url})
-{company}
-{salary} | {easy}
-Postulantes: {applicants} | {posted}")
+        line1 = f"{match} [{title}]({url})"
+        line2 = company
+        line3 = f"{salary} | {easy}"
+        line4 = f"Postulantes: {applicants} | {posted}"
+        text = NL.join([line1, line2, line3, line4])
         try:
             await context.bot.send_message(chat_id, text, parse_mode="Markdown", disable_web_page_preview=True)
             time.sleep(0.3)
