@@ -19,13 +19,14 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-# A=Titulo, B=Empresa, C=Ubicacion, D=Salario, E=Easy Apply,
-# F=Postulantes, G=Publicado, H=Nivel, I=Match con CV,
-# J=Notas, K=Link LinkedIn, L=Fecha Busqueda, M=postulado?, N=update?
+# Columnas:
+# A=Titulo, B=Empresa, C=Ubicacion, D=Salario, E=Match con CV,
+# F=Publicado, G=Nivel, H=Notas, I=Link, J=Postulantes,
+# K=Fecha, L=Postulado?, M=Update?
 HEADERS = [
-    "Titulo", "Empresa", "Ubicacion", "Salario", "Easy Apply",
-    "Postulantes", "Publicado", "Nivel", "Match con CV",
-    "Notas", "Link LinkedIn", "Fecha Busqueda", "postulado?", "update?"
+    "Titulo", "Empresa", "Ubicacion", "Salario", "Match con CV",
+    "Publicado", "Nivel", "Notas", "Link", "Postulantes",
+    "Fecha", "Postulado?", "Update?"
 ]
 
 SEARCHES = [
@@ -40,10 +41,26 @@ SEARCHES = [
 def get_match(title):
     t = title.lower()
     if any(k in t for k in ["help desk", "helpdesk", "service desk", "it support", "soporte de ti", "soporte ti"]):
-        return "\u2b50\u2b50\u2b50"
+        return "⭐⭐⭐"
     if any(k in t for k in ["sysadmin", "system admin", "infrastructure", "infraestructura", "noc", "operations"]):
-        return "\u2b50\u2b50"
-    return "\u2b50"
+        return "⭐⭐"
+    return "⭐"
+
+
+def get_note(title, salary, applicants, posted):
+    """Genera nota breve para el comentario de celda."""
+    t = title.lower()
+    lines = []
+    if any(k in t for k in ["help desk", "helpdesk"]): lines.append("Rol: Help Desk")
+    elif any(k in t for k in ["service desk"]): lines.append("Rol: Service Desk")
+    elif any(k in t for k in ["it support"]): lines.append("Rol: IT Support")
+    elif any(k in t for k in ["system admin", "sysadmin"]): lines.append("Rol: SysAdmin")
+    else: lines.append(f"Rol: {title[:40]}")
+    if salary and salary != "No especificado":
+        lines.append(f"Salario: {salary}")
+    lines.append(f"Postulantes: {applicants}")
+    lines.append(f"Publicado: {posted}")
+    return "\n".join(lines)
 
 
 def get_sheet():
@@ -70,10 +87,11 @@ def append_to_sheet(jobs):
             sheet.append_row(HEADERS, value_input_option="USER_ENTERED")
             existing = [HEADERS]
 
+        # Detectar duplicados por URL en col I (index 8)
         existing_urls = set()
         for row in existing[1:]:
-            if len(row) > 10:
-                cell = row[10]
+            if len(row) > 8:
+                cell = row[8]
                 if cell.startswith('=HYPERLINK('):
                     try:
                         existing_urls.add(cell.split('"')[1])
@@ -82,8 +100,9 @@ def append_to_sheet(jobs):
                 elif cell.startswith("http"):
                     existing_urls.add(cell)
 
-        today = date.today().strftime("%d/%m/%Y")
+        today = date.today().strftime("%m-%d-%Y")
         rows_to_add = []
+        notes_to_add = []  # (row_index, note_text) para comentarios de celda
 
         for job in jobs:
             url = job.get("job_url", "")
@@ -95,20 +114,50 @@ def append_to_sheet(jobs):
             location   = job.get("location", "")
             match      = get_match(title)
             salary     = job.get("salary_range") or "No especificado"
-            easy       = "SI" if job.get("easy_apply") else "NO"
-            applicants = job.get("num_applicants", "N/D")
             posted     = job.get("time_posted", "")
             level      = job.get("seniority_level", "")
+            applicants = job.get("num_applicants", "N/D")
             link_formula = f'=HYPERLINK("{url}","\U0001f517 Ver oferta")' if url else ""
+            note_text  = get_note(title, salary, applicants, posted)
 
             rows_to_add.append([
-                title, company, location, salary, easy,
-                applicants, posted, level, match, "",
-                link_formula, today, "", ""
+                title,        # A
+                company,      # B
+                location,     # C
+                salary,       # D
+                match,        # E
+                posted,       # F
+                level,        # G
+                "\U0001f4dd", # H: solo emoji, nota en comentario
+                link_formula, # I
+                applicants,   # J
+                today,        # K
+                "FALSE",      # L: Postulado? (checkbox)
+                "FALSE"       # M: Update? (checkbox)
             ])
+            notes_to_add.append(note_text)
 
         if rows_to_add:
-            sheet.append_rows(rows_to_add, value_input_option="USER_ENTERED")
+            start_row = len(existing) + 1
+            # Separar formulas de valores para col I
+            vals_only = [r[:] for r in rows_to_add]
+            for v in vals_only:
+                v[8] = ""  # limpiar col I temporalmente
+            sheet.append_rows(vals_only, value_input_option="USER_ENTERED")
+
+            # Escribir formulas de link una por una en col I
+            for i, row in enumerate(rows_to_add):
+                f = row[8]
+                if f.startswith("="):
+                    sheet.update_cell(start_row + i, 9, f)
+                # Agregar nota/comentario en col H
+                if notes_to_add[i]:
+                    cell_ref = f"H{start_row + i}"
+                    try:
+                        sheet.update_note(cell_ref, notes_to_add[i])
+                    except Exception:
+                        pass
+
             print(f"[Sheet] {len(rows_to_add)} filas agregadas.")
         else:
             print("[Sheet] Sin filas nuevas.")
@@ -195,7 +244,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not all_jobs:
         keyboard = [[InlineKeyboardButton("\U0001f504 Reintentar", callback_data="search")]]
         await context.bot.send_message(
-            chat_id, "\u274c Sin resultados. Intenta de nuevo.",
+            chat_id, "❌ Sin resultados. Intenta de nuevo.",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -212,7 +261,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(
         chat_id,
-        f"\U0001f4cb *Resultados \u2014 {date.today().strftime('%d/%m/%Y')}*\n_{len(all_jobs)} empleos encontrados_",
+        f"\U0001f4cb *Resultados — {date.today().strftime('%m-%d-%Y')}*\n_{len(all_jobs)} empleos encontrados_",
         parse_mode="Markdown"
     )
 
@@ -223,13 +272,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         posted     = job.get("time_posted", "")
         salary     = job.get("salary_range") or "No especificado"
         url        = job.get("job_url", "")
-        easy       = "\u2705 Easy Apply" if job.get("easy_apply") else "\u274c Sin Easy Apply"
         match      = get_match(title)
 
         text = (
             f"{match} *[{title}]({url})*\n"
             f"\U0001f3e2 _{company}_\n"
-            f"\U0001f4b0 {salary}  |  {easy}\n"
+            f"\U0001f4b0 {salary}\n"
             f"\U0001f465 {applicants}  \U0001f550 {posted}"
         )
 
@@ -243,11 +291,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    sheet_note = "\U0001f4ca _Resultados guardados en Google Sheet._" if sheet_ok else "\u26a0\ufe0f _No se pudo guardar en el Sheet._"
+    sheet_note = "\U0001f4ca _Guardado en Google Sheet._" if sheet_ok else "⚠� _No se pudo guardar en el Sheet._"
     keyboard = [[InlineKeyboardButton("\U0001f50d Nueva busqueda", callback_data="search")]]
     await context.bot.send_message(
         chat_id,
-        f"\u2705 *Busqueda completada.*\n{sheet_note}",
+        f"✅ *Busqueda completada.*\n{sheet_note}",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -257,7 +305,7 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    print("\u2705 Bot corriendo...")
+    print("✅ Bot corriendo...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
