@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import html
 import requests
 from datetime import date
 from google.oauth2.service_account import Credentials
@@ -41,10 +42,10 @@ SEARCHES = [
 def get_match(title):
     t = title.lower()
     if any(k in t for k in ["help desk", "helpdesk", "service desk", "it support", "soporte de ti", "soporte ti"]):
-        return "⭐⭐⭐"
+        return "Ã¢Â­ÂÃ¢Â­ÂÃ¢Â­Â"
     if any(k in t for k in ["sysadmin", "system admin", "infrastructure", "infraestructura", "noc", "operations"]):
-        return "⭐⭐"
-    return "⭐"
+        return "Ã¢Â­ÂÃ¢Â­Â"
+    return "Ã¢Â­Â"
 
 
 def get_note(title, salary, applicants, posted):
@@ -215,8 +216,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     status_msg = await context.bot.send_message(
         chat_id,
-        "\U0001f50d *Iniciando busqueda...*",
-        parse_mode="Markdown"
+        "\U0001f50d <b>Iniciando busqueda...</b>",
+        parse_mode="HTML"
     )
 
     all_jobs = []
@@ -225,10 +226,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, params in enumerate(SEARCHES, 1):
         try:
             await context.bot.edit_message_text(
-                f"\U0001f50d *Busqueda {i}/{len(SEARCHES)}:* {params['job_title']} en {params['location']}...",
+                f"\U0001f50d <b>Busqueda {i}/{len(SEARCHES)}:</b> {html.escape(params['job_title'])} en {html.escape(params['location'])}...",
                 chat_id=chat_id,
                 message_id=status_msg.message_id,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             jobs = run_apify_search(params)
             for job in jobs:
@@ -244,7 +245,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not all_jobs:
         keyboard = [[InlineKeyboardButton("\U0001f504 Reintentar", callback_data="search")]]
         await context.bot.send_message(
-            chat_id, "❌ Sin resultados. Intenta de nuevo.",
+            chat_id, "Ã¢ÂÅ Sin resultados. Intenta de nuevo.",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -261,8 +262,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(
         chat_id,
-        f"\U0001f4cb *Resultados — {date.today().strftime('%m-%d-%Y')}*\n_{len(all_jobs)} empleos encontrados_",
-        parse_mode="Markdown"
+        f"\U0001f4cb *Resultados Ã¢â¬â {date.today().strftime('%m-%d-%Y')}*\n_{len(all_jobs)} empleos encontrados_",
+        parse_mode="HTML"
     )
 
     for job in all_jobs[:20]:
@@ -274,29 +275,36 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         url        = job.get("job_url", "")
         match      = get_match(title)
 
+        t_esc  = html.escape(str(title))
+        c_esc  = html.escape(str(company))
+        s_esc  = html.escape(str(salary))
+        ap_esc = html.escape(str(applicants))
+        po_esc = html.escape(str(posted))
+        u_esc  = html.escape(str(url))
+
         text = (
-            f"{match} *[{title}]({url})*\n"
-            f"\U0001f3e2 _{company}_\n"
-            f"\U0001f4b0 {salary}\n"
-            f"\U0001f465 {applicants}  \U0001f550 {posted}"
+            f"{match} <b><a href='{u_esc}'>{t_esc}</a></b>\n"
+            f"\U0001f3e2 <i>{c_esc}</i>\n"
+            f"\U0001f4b0 {s_esc}\n"
+            f"\U0001f465 {ap_esc}  \U0001f550 {po_esc}"
         )
 
         try:
             await context.bot.send_message(
                 chat_id, text,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 disable_web_page_preview=True
             )
             time.sleep(0.3)
         except Exception:
             pass
 
-    sheet_note = "\U0001f4ca _Guardado en Google Sheet._" if sheet_ok else "⚠� _No se pudo guardar en el Sheet._"
+    sheet_note = "\U0001f4ca _Guardado en Google Sheet._" if sheet_ok else "Ã¢Å¡Â Ã»Ã¯ÂÂ _No se pudo guardar en el Sheet._"
     keyboard = [[InlineKeyboardButton("\U0001f50d Nueva busqueda", callback_data="search")]]
     await context.bot.send_message(
         chat_id,
-        f"✅ *Busqueda completada.*\n{sheet_note}",
-        parse_mode="Markdown",
+        f"Ã¢Åâ¦ *Busqueda completada.*\n{sheet_note}",
+        parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -305,7 +313,7 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    print("✅ Bot corriendo...")
+    print("Ã¢Åâ¦ Bot corriendo...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
